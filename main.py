@@ -253,7 +253,7 @@ def draw_explosion(x, y, z, size):
     
     glPopMatrix()
     
-    def draw_ground():
+def draw_ground():
     glColor3f(0.4, 0.25, 0.1)
     glPushMatrix()
     glTranslatef(0, -0.5, 0)
@@ -319,31 +319,111 @@ def draw_building(x, z):
     
     glPopMatrix()
 
+def draw_hud():
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    glOrtho(0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, -1, 1)
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    glColor3f(1.0, 1.0, 0.0)
+    level_text = f"LEVEL: {current_level}"
+    text_width = len(level_text) * 10
+    glRasterPos2f(WINDOW_WIDTH/2 - text_width/2, 30)
+    for char in level_text:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    glColor3f(1.0, 1.0, 1.0)
+    glRasterPos2f(20, 60)
+    score_text = f"Score: {player_score}"
+    for char in score_text:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    glRasterPos2f(20, 90)
+    health_text = f"Health: {player_health}"
+    for char in health_text:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    glRasterPos2f(20, 120)
+    camera_text = f"Camera: {'First Person' if first_person else 'Third Person'}"
+    for char in camera_text:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    glRasterPos2f(20, 150)
+    missed_text = f"Missed: {missed_shots}"
+    for char in missed_text:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    
+    if cheat_mode:
+        glColor3f(1.0, 0.0, 0.0)
+        glRasterPos2f(20, 180)
+        cheat_text = "CHEAT MODE: ON"
+        for char in cheat_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+        y_pos = 210
+        if auto_aim:
+            glRasterPos2f(20, y_pos)
+            aim_text = "AUTO-AIM: ON"
+            for char in aim_text:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+            y_pos += 30     
+        if infinite_health:
+            glRasterPos2f(20, y_pos)
+            health_text = "INFINITE HEALTH: ON"
+            for char in health_text:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+            y_pos += 30 
+        if speed_boost:
+            glRasterPos2f(20, y_pos)
+            speed_text = "SPEED BOOST: ON"
+            for char in speed_text:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+
+    if game_over:
+        glColor3f(1.0, 0.0, 0.0)
+        glRasterPos2f(WINDOW_WIDTH/2 - 50, WINDOW_HEIGHT/2)
+        game_over_text = "GAME OVER"
+        for char in game_over_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+        
+        glColor3f(1.0, 1.0, 1.0)
+        glRasterPos2f(WINDOW_WIDTH/2 - 70, WINDOW_HEIGHT/2 + 30)
+        restart_text = "Press 'R' to restart"
+        for char in restart_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    if winner:
+        glColor3f(0.0, 1.0, 0.0)
+        glRasterPos2f(WINDOW_WIDTH/2 - 60, WINDOW_HEIGHT/2)
+        winner_text = "WINNER!"
+        for char in winner_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
+    glPopMatrix()
+    
 def generate_environment():
-    global trees, enemies
+    global trees, buildings, clouds
     trees = []
-    num_trees = 20
+    num_trees = 300
+    
     for _ in range(num_trees):
-        x = random.uniform(-world_size + 5, world_size - 5)
-        z = random.uniform(-world_size + 5, world_size - 5)
-        if abs(x) < 10 and abs(z) < 10:
-            continue
-        scale = random.uniform(0.5, 0.8) 
-        trees.append((x, z, scale))
-    enemies = []
-    num_enemies = 5
-    for _ in range(num_enemies):
-        angle = random.uniform(0, 360)
-        distance = random.uniform(15, world_size - 5)
-        x = math.sin(math.radians(angle)) * distance
-        z = math.cos(math.radians(angle)) * distance
-        enemies.append({
-            "x": x,
-            "y": 0,
-            "z": z,
-            "angle": random.uniform(0, 360),
-            "scale": 0.5
-        })
+        x = random.uniform(-world_size + 120, world_size - 120)
+        z = random.uniform(-world_size + 120, world_size - 120)
+        scale = random.uniform(0.8, 1.2)
+        color_variation = random.uniform(-0.1, 0.1)
+        trees.append((x, z, scale, color_variation))
+    
+    buildings = []
+    for _ in range(50):
+        x = random.uniform(-world_size + 50, world_size - 50)
+        z = random.uniform(-world_size + 50, world_size - 50)
+        if abs(x) > 60 and abs(z) > 60:
+            buildings.append((x, z))
+
+    clouds = []
+    for _ in range(30):
+        x = random.uniform(-world_size * 1.5, world_size * 1.5)
+        y = random.uniform(30, 50)
+        z = random.uniform(-world_size * 1.5, world_size * 1.5)
+        clouds.append((x, y, z))
 
 
 
