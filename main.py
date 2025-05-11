@@ -4,10 +4,11 @@ from OpenGL.GLUT import *
 import sys
 import math
 import random
-
+import time
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600
 player_x = 0.0
+player_y = 0.0
 player_z = 0.0
 player_angle = 0.0
 player_health = 100
@@ -16,22 +17,70 @@ game_over = False
 enemies = []
 bullets = []
 explosions = []
-bullet_speed = 0.5
+power_ups = []
 camera_distance = 10.0
 camera_height = 5.0
 camera_angle = 0.0
+first_person = False
+camera_smoothness = 0.1
+target_camera_angle = 0.0
+target_camera_height = 5.0
+target_camera_distance = 10.0
+camera_rotation_speed = 5.0
 move_forward = move_backward = move_left = move_right = False
+turn_left = turn_right = False
 movement_speed = 0.3
 rotation_speed = 3.0
-world_size = 50
+strafe_speed = 0.2
 trees = []
+buildings = []
+clouds = []
+world_size = 200
+cheat_mode = False
+auto_aim = False
+infinite_health = False
+speed_boost = False
+target_enemy = None
+last_auto_fire_time = 0
+auto_fire_cooldown = 0.2
+missed_shots = 0
+enemy_bullets = []
+enemy_shoot_cooldown = 2.0 
+last_enemy_shot_time = {}
+leg_angle = 0.0
+leg_direction = 1.0  
+leg_speed = 5.0  
+last_auto_shot_time = 0
+auto_shot_cooldown = 0.3
+scan_angle = 0
+normal_speed = 0.3 
+cheat_speed = 1.0
+bullet_speed = 1.5
+enemy_bullet_speed = 0.84
+shield_on = False
+current_level = 1
+winner = False
+is_paused = False
+
+# (Level 3 boss Alien)
+boss_active = False
+boss_x = 0.0
+boss_y = 0.0
+boss_z = 0.0
+boss_health = 300
+boss_max_health = 300
+boss_missile_timer = 0.0
+boss_missile_cooldown = 2.0
+boss_missiles = []
 
 def init():
     glutInit()
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT)
     glutInitWindowPosition(100, 100)
-    glutCreateWindow(b"Test Case - Small Enemies and Trees")
+    glutCreateWindow(b"3D Shooting Game")
+    
+    glutSetCursor(GLUT_CURSOR_NONE)  # Hide cursor
     
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_LIGHTING)
@@ -51,6 +100,224 @@ def init():
     glMatrixMode(GL_MODELVIEW)
     
     generate_environment()
+    spawn_enemies(15)
+    
+def draw_player():
+    global leg_angle
+    
+    glPushMatrix()
+    glTranslatef(player_x, 0, player_z)
+    glRotatef(player_angle, 0, 1, 0)
+    
+    glColor3f(0.0, 0.0, 1.0)
+    glPushMatrix()
+    glTranslatef(0, 1.0, 0)
+    glScalef(0.4, 0.6, 0.3)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    
+    glColor3f(0.0, 0.0, 0.8)
+    glPushMatrix()
+    glTranslatef(0, 1.5, 0)
+    glutSolidSphere(0.2, 16, 16)
+    glPopMatrix()
+    
+    arm_positions = [(-0.25, 1.0, 0), (0.25, 1.0, 0)]
+    for i, (ax, ay, az) in enumerate(arm_positions):
+        glPushMatrix()
+        glTranslatef(ax, ay, az)
+        if i % 2 == 0:
+            glRotatef(-leg_angle, 1, 0, 0)
+        else:
+            glRotatef(leg_angle, 1, 0, 0)
+        glScalef(0.1, 0.3, 0.1)
+        glColor3f(0.0, 0.0, 0.7)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    
+    leg_positions = [(-0.15, 0.5, 0), (0.15, 0.5, 0)]
+    for i, (lx, ly, lz) in enumerate(leg_positions):
+        glPushMatrix()
+        glTranslatef(lx, ly, lz)
+        if i % 2 == 0:
+            glRotatef(leg_angle, 1, 0, 0)
+        else:
+            glRotatef(-leg_angle, 1, 0, 0)
+        glScalef(0.1, 0.4, 0.1)
+        glColor3f(0.0, 0.0, 0.7)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    
+    glColor3f(0.3, 0.3, 0.3)
+    glPushMatrix()
+    glTranslatef(0.35, 1.0, 0)
+    glRotatef(90, 0, 1, 0)
+    glScalef(0.05, 0.05, 0.3)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    
+    glPopMatrix()
+
+def draw_enemy(x, y, z, angle):
+    if current_level == 1:
+        body_color = (0.8, 0.2, 0.2) 
+        head_color = (0.9, 0.3, 0.3)
+        limb_color = (0.7, 0.1, 0.1)
+    elif current_level == 2:
+        body_color = (0.6, 0.2, 0.8)  
+        head_color = (0.7, 0.3, 0.9)
+        limb_color = (0.5, 0.1, 0.7)
+    else:
+        body_color = (0.95, 0.85, 0.1) 
+        limb_color = (0.85, 0.75, 0.05)
+    glPushMatrix()
+    glTranslatef(x, 0, z)
+    glRotatef(angle, 0, 1, 0)
+    
+    glColor3f(*body_color)
+    glPushMatrix()
+    glTranslatef(0, 1.0, 0)
+    glScalef(0.4, 0.6, 0.3)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glColor3f(*head_color)
+    glPushMatrix()
+    glTranslatef(0, 1.5, 0)
+    glutSolidSphere(0.2, 16, 16)
+    glPopMatrix()
+    arm_positions = [(-0.25, 1.0, 0), (0.25, 1.0, 0)]
+    for i, (ax, ay, az) in enumerate(arm_positions):
+        glPushMatrix()
+        glTranslatef(ax, ay, az)
+        if i % 2 == 0:
+            glRotatef(-leg_angle, 1, 0, 0)
+        else:
+            glRotatef(leg_angle, 1, 0, 0)
+        glScalef(0.1, 0.3, 0.1)
+        glColor3f(*limb_color)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    leg_positions = [(-0.15, 0.5, 0), (0.15, 0.5, 0)]
+    for i, (lx, ly, lz) in enumerate(leg_positions):
+        glPushMatrix()
+        glTranslatef(lx, ly, lz)
+        if i % 2 == 0:
+            glRotatef(leg_angle, 1, 0, 0)
+        else:
+            glRotatef(-leg_angle, 1, 0, 0)
+        glScalef(0.1, 0.4, 0.1)
+        glColor3f(*limb_color)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    glColor3f(0.3, 0.3, 0.3)
+    glPushMatrix()
+    glTranslatef(0.35, 1.0, 0)
+    glRotatef(90, 0, 1, 0)
+    glScalef(0.05, 0.05, 0.3)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glPopMatrix()
+
+def draw_bullet(x, y, z, direction):
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    glRotatef(direction, 0, 1, 0)
+    
+    glColor3f(0.0, 1.0, 0.0)
+    glPushMatrix()
+    glTranslatef(0, 0.5, 0)
+    glScalef(0.2, 0.2, 0.4)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    
+    glColor3f(0.0, 0.8, 0.0)
+    glPushMatrix()
+    glTranslatef(0, 0.5, 0.3)
+    glScalef(0.1, 0.1, 0.2)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    
+    glPopMatrix()
+
+def draw_explosion(x, y, z, size):
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    
+    glColor3f(1.0, 0.5, 0.0)
+    for i in range(8):
+        glPushMatrix()
+        glRotatef(45 * i, 0, 1, 0)
+        glTranslatef(0, 0, size)
+        glutSolidSphere(0.2, 8, 8)
+        glPopMatrix()
+    
+    glPopMatrix()
+    
+    def draw_ground():
+    glColor3f(0.4, 0.25, 0.1)
+    glPushMatrix()
+    glTranslatef(0, -0.5, 0)
+    glScalef(world_size, 1, world_size)
+    glutSolidCube(1.0)
+    glPopMatrix()
+
+def draw_tree(x, z, scale=1.0):
+    glPushMatrix()
+    glTranslatef(x, 0, z)
+    glColor3f(0.4, 0.2, 0.1)
+    glPushMatrix()
+    glTranslatef(0, scale * 0.5, 0)
+    glScalef(0.2 * scale, scale, 0.2 * scale)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glColor3f(0.0, 0.6, 0.0)
+    glPushMatrix()
+    glTranslatef(0, scale * 1.2, 0)
+    glScalef(0.8 * scale, 0.4 * scale, 0.8 * scale)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glColor3f(0.0, 0.7, 0.0)
+    glPushMatrix()
+    glTranslatef(0, scale * 1.6, 0)
+    glScalef(0.6 * scale, 0.4 * scale, 0.6 * scale)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glColor3f(0.0, 0.8, 0.0)
+    glPushMatrix()
+    glTranslatef(0, scale * 2.0, 0)
+    glScalef(0.4 * scale, 0.4 * scale, 0.4 * scale)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glPopMatrix()
+
+def draw_building(x, z):
+    glPushMatrix()
+    glTranslatef(x, 0, z)
+    glColor3f(0.7, 0.7, 0.7)
+    glPushMatrix()
+    glTranslatef(0, 2, 0)
+    glScalef(2, 4, 2)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glColor3f(0.8, 0.8, 1.0)
+    window_positions = [
+        (-0.5, 1, 1.01),
+        (0.5, 1, 1.01),
+        (-0.5, 3, 1.01),
+        (0.5, 3, 1.01),
+        (-0.5, 1, -1.01),
+        (0.5, 1, -1.01),
+        (-0.5, 3, -1.01),
+        (0.5, 3, -1.01)
+    ]
+    for pos in window_positions:
+        glPushMatrix()
+        glTranslatef(*pos)
+        glScalef(0.3, 0.5, 0.1)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    
+    glPopMatrix()
 
 def generate_environment():
     global trees, enemies
@@ -78,109 +345,8 @@ def generate_environment():
             "scale": 0.5
         })
 
-def draw_ground():
-    glColor3f(0.4, 0.25, 0.1)
-    glPushMatrix()
-    glTranslatef(0, -0.5, 0)
-    glScalef(world_size, 1, world_size)
-    glutSolidCube(1.0)
-    glPopMatrix()
 
-def draw_tree(x, z, scale=1.0):
-    glPushMatrix()
-    glTranslatef(x, 0, z)
-    glColor3f(0.4, 0.2, 0.1)
-    glPushMatrix()
-    glTranslatef(0, scale * 0.5, 0)
-    glScalef(0.2 * scale, scale, 0.2 * scale)
-    glutSolidCube(1.0)
-    glPopMatrix()
-    glColor3f(0.0, 0.6, 0.0)
-    glPushMatrix()
-    glTranslatef(0, scale * 1.2, 0)
-    glScalef(0.8 * scale, 0.8 * scale, 0.8 * scale)
-    glutSolidCube(1.0)
-    glPopMatrix()
-    
-    glPopMatrix()
 
-def draw_enemy(enemy):
-    x, y, z, angle, scale = enemy["x"], enemy["y"], enemy["z"], enemy["angle"], enemy["scale"]
-    
-    glPushMatrix()
-    glTranslatef(x, 0, z)
-    glRotatef(angle, 0, 1, 0)
-    glScalef(scale, scale, scale)
-    glColor3f(0.8, 0.2, 0.2)
-    glPushMatrix()
-    glTranslatef(0, 1.0, 0)
-    glScalef(0.4, 0.6, 0.3)
-    glutSolidCube(1.0)
-    glPopMatrix()
-    glColor3f(0.9, 0.3, 0.3)
-    glPushMatrix()
-    glTranslatef(0, 1.5, 0)
-    glutSolidSphere(0.2, 16, 16)
-    glPopMatrix()
-    arm_positions = [(-0.25, 1.0, 0), (0.25, 1.0, 0)]
-    for ax, ay, az in arm_positions:
-        glPushMatrix()
-        glTranslatef(ax, ay, az)
-        glScalef(0.1, 0.3, 0.1)
-        glColor3f(0.7, 0.1, 0.1)
-        glutSolidCube(1.0)
-        glPopMatrix()
-    leg_positions = [(-0.15, 0.5, 0), (0.15, 0.5, 0)]
-    for lx, ly, lz in leg_positions:
-        glPushMatrix()
-        glTranslatef(lx, ly, lz)
-        glScalef(0.1, 0.4, 0.1)
-        glColor3f(0.7, 0.1, 0.1)
-        glutSolidCube(1.0)
-        glPopMatrix()
-    
-    glPopMatrix()
-
-def draw_player():
-    glPushMatrix()
-    glTranslatef(player_x, 0, player_z)
-    glRotatef(player_angle, 0, 1, 0)
-    glColor3f(0.0, 0.0, 1.0)
-    glPushMatrix()
-    glTranslatef(0, 1.0, 0)
-    glScalef(0.4, 0.6, 0.3)
-    glutSolidCube(1.0)
-    glPopMatrix()
-    glColor3f(0.0, 0.0, 0.8)
-    glPushMatrix()
-    glTranslatef(0, 1.5, 0)
-    glutSolidSphere(0.2, 16, 16)
-    glPopMatrix()
-    arm_positions = [(-0.25, 1.0, 0), (0.25, 1.0, 0)]
-    for ax, ay, az in arm_positions:
-        glPushMatrix()
-        glTranslatef(ax, ay, az)
-        glScalef(0.1, 0.3, 0.1)
-        glColor3f(0.0, 0.0, 0.7)
-        glutSolidCube(1.0)
-        glPopMatrix()
-    leg_positions = [(-0.15, 0.5, 0), (0.15, 0.5, 0)]
-    for lx, ly, lz in leg_positions:
-        glPushMatrix()
-        glTranslatef(lx, ly, lz)
-        glScalef(0.1, 0.4, 0.1)
-        glColor3f(0.0, 0.0, 0.7)
-        glutSolidCube(1.0)
-        glPopMatrix()
-    
-    glPopMatrix()
-
-def draw_bullet(x, y, z):
-    glPushMatrix()
-    glTranslatef(x, y, z)
-    glColor3f(0.0, 1.0, 0.0)
-    glutSolidSphere(0.2, 16, 16)
-    glPopMatrix()
 
 def update_bullets():
     global bullets
