@@ -425,7 +425,83 @@ def generate_environment():
         z = random.uniform(-world_size * 1.5, world_size * 1.5)
         clouds.append((x, y, z))
 
+def spawn_enemies(count):
+    for _ in range(count):
+        angle = random.uniform(0, 360)
+        distance = random.uniform(40, world_size - 20)
+        x = math.sin(math.radians(angle)) * distance
+        z = math.cos(math.radians(angle)) * distance
+        enemies.append([x, 0, z, random.uniform(0, 360)])
 
+def check_collisions():
+    global player_health, player_score, enemies, bullets, explosions
+    
+    for bullet in bullets[:]:
+        bx, by, bz, _ = bullet
+        for enemy in enemies[:]:
+            ex, ey, ez, _ = enemy
+            distance = math.sqrt((bx - ex)**2 + (by - ey)**2 + (bz - ez)**2)
+            if distance < 1.0:
+                if bullet in bullets:
+                    bullets.remove(bullet)
+                if enemy in enemies:
+                    enemies.remove(enemy)
+                    player_score += 10
+                    explosions.append([ex, ey, ez, 1.0])
+                break    
+    for enemy in enemies:
+        ex, ey, ez, _ = enemy
+        distance = math.sqrt((ex - player_x)**2 + (ey - player_y)**2 + (ez - player_z)**2)
+        if distance < 1.0:
+            player_health -= 1
+            if player_health <= 0:
+                global game_over
+                game_over = True
+
+def find_nearest_enemy():
+    if not enemies:
+        return None
+    nearest_enemy = None
+    min_distance = float('inf')
+    for enemy in enemies:
+        dx = enemy[0] - player_x
+        dz = enemy[2] - player_z
+        distance = math.sqrt(dx * dx + dz * dz)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_enemy = enemy
+    
+    return nearest_enemy
+
+def auto_target_enemy():
+    global player_angle, bullets, last_auto_fire_time, target_enemy
+    
+    if not enemies:
+        target_enemy = None
+        return
+    
+    if not target_enemy or target_enemy not in enemies:
+        target_enemy = find_nearest_enemy()
+    
+    if target_enemy:
+        dx = target_enemy[0] - player_x
+        dz = target_enemy[2] - player_z
+        target_angle = math.degrees(math.atan2(dx, dz))
+        
+        angle_diff = (target_angle - player_angle) % 360
+        if angle_diff > 180:
+            angle_diff -= 360
+        
+        if abs(angle_diff) > 5:
+            player_angle += angle_diff * 0.1
+        
+        current_time = time.time()
+        if current_time - last_auto_fire_time >= auto_fire_cooldown:
+            bullet_x = player_x + math.sin(math.radians(player_angle)) * 1.5
+            bullet_y = player_y + 0.5
+            bullet_z = player_z + math.cos(math.radians(player_angle)) * 1.5
+            bullets.append([bullet_x, bullet_y, bullet_z, player_angle])
+            last_auto_fire_time = current_time
 
 def update_bullets():
     global bullets
