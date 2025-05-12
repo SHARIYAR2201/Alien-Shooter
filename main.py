@@ -503,77 +503,439 @@ def auto_target_enemy():
             bullets.append([bullet_x, bullet_y, bullet_z, player_angle])
             last_auto_fire_time = current_time
 
-def update_bullets():
-    global bullets
+
+def auto_move_to_enemy():
+    global player_x, player_z, move_forward
+    
+    if not target_enemy:
+        return
+    
+    dx = target_enemy[0] - player_x
+    dz = target_enemy[2] - player_z
+    distance = math.sqrt(dx * dx + dz * dz)
+    
+    if distance > 5:
+        move_forward = True
+    else:
+        move_forward = False
+
+def draw_fence(x, z, length, rotation=0):
+    glPushMatrix()
+    glTranslatef(x, 0, z)
+    glRotatef(rotation, 0, 1, 0)
+    
+    post_spacing = 5.0
+    num_posts = int(length / post_spacing) + 1
+    
+    for i in range(num_posts):
+        glColor3f(0.4, 0.2, 0.1)
+        glPushMatrix()
+        glTranslatef(i * post_spacing, 1, 0)
+        glScalef(0.2, 2, 0.2)
+        glutSolidCube(1.0)
+        glPopMatrix()
+        
+        if i < num_posts - 1:
+            glColor3f(0.5, 0.3, 0.2)
+            glPushMatrix()
+            glTranslatef(i * post_spacing + post_spacing/2, 1.8, 0)
+            glScalef(post_spacing, 0.1, 0.1)
+            glutSolidCube(1.0)
+            glPopMatrix()
+            glPushMatrix()
+            glTranslatef(i * post_spacing + post_spacing/2, 1.0, 0)
+            glScalef(post_spacing, 0.1, 0.1)
+            glutSolidCube(1.0)
+            glPopMatrix()
+            glPushMatrix()
+            glTranslatef(i * post_spacing + post_spacing/2, 0.2, 0)
+            glScalef(post_spacing, 0.1, 0.1)
+            glutSolidCube(1.0)
+            glPopMatrix()
+    glPopMatrix()
+
+def draw_boundaries():
+    fence_length = world_size * 2
+    draw_fence(-world_size, -world_size, fence_length, 0)
+    draw_fence(-world_size, world_size, fence_length, 0)
+    draw_fence(world_size, -world_size, fence_length, 90)
+    draw_fence(-world_size, -world_size, fence_length, 90)
+
+def draw_enemy_bullet(x, y, z, direction):
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    glRotatef(direction, 0, 1, 0)
+    glColor3f(1.0, 0.0, 0.0)
+    glPushMatrix()
+    glTranslatef(0, 0.5, 0)
+    glScalef(0.2, 0.2, 0.4)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    glColor3f(1.0, 0.5, 0.0)
+    glPushMatrix()
+    glTranslatef(0, 0.5, 0.3)
+    glScalef(0.1, 0.1, 0.2)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    
+    glPopMatrix()
+
+def update_enemy_positions():
+    global enemies, enemy_bullets, last_enemy_shot_time
+    current_time = time.time()
+    if current_level == 3:
+        enemy_speed = 0.4
+    else:
+        enemy_speed = 0.2
+    for i, enemy in enumerate(enemies):
+        x, y, z, angle = enemy
+        dx = player_x - x
+        dz = player_z - z
+        distance = math.sqrt(dx * dx + dz * dz)
+        target_angle = math.degrees(math.atan2(dx, dz))
+        angle_diff = (target_angle - angle) % 360
+        if angle_diff > 180:
+            angle_diff -= 360
+        new_angle = angle + angle_diff * 0.1
+        if distance > 2.0:
+            new_x = x + math.sin(math.radians(new_angle)) * enemy_speed
+            new_z = z + math.cos(math.radians(new_angle)) * enemy_speed
+            if not check_boundary_collision(new_x, new_z):
+                x = new_x
+                z = new_z
+        enemies[i] = (x, y, z, new_angle)
+        if current_time - last_enemy_shot_time.get(i, 0) >= enemy_shoot_cooldown:
+            if distance < 20.0:
+                angle_to_player = abs(angle_diff)
+                if angle_to_player < 30.0:
+                    bullet_x = x + math.sin(math.radians(new_angle)) * 1.5
+                    bullet_z = z + math.cos(math.radians(new_angle)) * 1.5
+                    enemy_bullets.append((bullet_x, 1.0, bullet_z, new_angle))
+                    last_enemy_shot_time[i] = current_time
+
+def update_game():
+    global player_x, player_z, player_angle, player_health, player_score
+    global enemies, bullets, enemy_bullets, explosions, missed_shots, game_over
+    global leg_angle, leg_direction, last_auto_shot_time, scan_angle, normal_speed, cheat_speed, speed_boost
+    global move_forward, move_backward, move_left, move_right
+    global current_level, winner
+    global boss_active, boss_x, boss_y, boss_z, boss_health, boss_max_health, boss_missile_timer, boss_missile_cooldown, boss_missiles
+    if game_over or winner or is_paused:
+        return
+    if player_score <= 50:
+        current_level = 1
+        boss_active = False
+    elif player_score <= 150:
+        current_level = 2
+        boss_active = False
+    elif player_score <= 300:
+        current_level = 3
+        if not boss_active:
+            boss_active = True
+            boss_health = boss_max_health
+            boss_x = 0.0
+            boss_y = 0.0
+            boss_z = 60.0
+            boss_missile_timer = time.time()
+            boss_missiles = []
+            enemies.clear()
+    else:
+        winner = True
+        boss_active = False
+        return
+    auto_avoid = False
+    if cheat_mode:
+        if boss_active:
+            dx = boss_x - player_x
+            dz = boss_z - player_z
+            target_angle = math.degrees(math.atan2(dx, dz))
+            player_angle = target_angle
+            current_time = time.time()
+            if current_time - last_auto_shot_time >= auto_shot_cooldown:
+                bullet_x = player_x + math.sin(math.radians(target_angle)) * 1.5
+                bullet_z = player_z + math.cos(math.radians(target_angle)) * 1.5
+                bullets.append((bullet_x, 1.0, bullet_z, target_angle))
+                last_auto_shot_time = current_time
+            boss_dist = math.sqrt(dx*dx + dz*dz)
+            if boss_dist < 8.0:
+                auto_avoid = True
+        else:
+            nearest_enemy = None
+            min_distance = float('inf')
+            for enemy in enemies:
+                dx = enemy[0] - player_x
+                dz = enemy[2] - player_z
+                distance = math.sqrt(dx * dx + dz * dz)
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_enemy = enemy
+            if nearest_enemy:
+                dx = nearest_enemy[0] - player_x
+                dz = nearest_enemy[2] - player_z
+                target_angle = math.degrees(math.atan2(dx, dz))
+                player_angle = target_angle
+                current_time = time.time()
+                if current_time - last_auto_shot_time >= auto_shot_cooldown:
+                    bullet_x = player_x + math.sin(math.radians(target_angle)) * 1.5
+                    bullet_z = player_z + math.cos(math.radians(target_angle)) * 1.5
+                    bullets.append((bullet_x, 1.0, bullet_z, target_angle))
+                    last_auto_shot_time = current_time
+                if min_distance < 4.0:
+                    auto_avoid = True
+    current_speed = (cheat_speed if cheat_mode else normal_speed) * (2.0 if speed_boost else 1.0)
+    new_x = player_x
+    new_z = player_z
+
+    if move_forward:
+        new_x += math.sin(math.radians(player_angle)) * current_speed
+        new_z += math.cos(math.radians(player_angle)) * current_speed
+    if move_backward:
+        new_x -= math.sin(math.radians(player_angle)) * current_speed
+        new_z -= math.cos(math.radians(player_angle)) * current_speed
+    if move_left:
+        new_x -= math.sin(math.radians(player_angle - 90)) * current_speed
+        new_z -= math.cos(math.radians(player_angle - 90)) * current_speed
+    if move_right:
+        new_x -= math.sin(math.radians(player_angle + 90)) * current_speed
+        new_z -= math.cos(math.radians(player_angle + 90)) * current_speed
+    if cheat_mode and auto_avoid:
+        new_x -= math.sin(math.radians(player_angle)) * current_speed
+        new_z -= math.cos(math.radians(player_angle)) * current_speed
+
+    if not check_boundary_collision(new_x, new_z):
+        player_x = new_x
+        player_z = new_z
+    if move_forward or move_backward or (cheat_mode and auto_avoid):
+        leg_angle += leg_speed * leg_direction
+        if abs(leg_angle) > 30:
+            leg_direction *= -1
+    else:
+        leg_angle = 0
     new_bullets = []
     for bullet in bullets:
-        x, y, z, angle = bullet
-        new_x = x + math.sin(math.radians(angle)) * bullet_speed
-        new_z = z + math.cos(math.radians(angle)) * bullet_speed
-        if abs(new_x) < world_size and abs(new_z) < world_size:
-            new_bullets.append((new_x, y, new_z, angle))
+        x, y, z, direction = bullet
+        new_x = x + math.sin(math.radians(direction)) * bullet_speed
+        new_z = z + math.cos(math.radians(direction)) * bullet_speed
+        if not check_boundary_collision(new_x, new_z):
+            new_bullets.append((new_x, y, new_z, direction))
+        else:
+            missed_shots += 1
     bullets = new_bullets
+    new_enemy_bullets = []
+    for bullet in enemy_bullets:
+        x, y, z, direction = bullet
+        new_x = x + math.sin(math.radians(direction)) * enemy_bullet_speed
+        new_z = z + math.cos(math.radians(direction)) * enemy_bullet_speed
+        if not check_boundary_collision(new_x, new_z):
+            new_enemy_bullets.append((new_x, y, new_z, direction))
+    enemy_bullets = new_enemy_bullets
+
+    #BOSS(Level 3)
+    if boss_active:
+        dx = player_x - boss_x
+        dz = player_z - boss_z
+        dist = math.sqrt(dx*dx + dz*dz)
+        if dist > 6.0:
+            boss_speed = 0.04
+            boss_x += (dx/dist) * boss_speed
+            boss_z += (dz/dist) * boss_speed
+        now = time.time()
+        if now - boss_missile_timer > boss_missile_cooldown:
+            dx = player_x - boss_x
+            dz = player_z - boss_z
+            missile_angle = math.degrees(math.atan2(dx, dz))
+            missile_x = boss_x + math.sin(math.radians(missile_angle)) * 4.0
+            missile_z = boss_z + math.cos(math.radians(missile_angle)) * 4.0
+            boss_missiles.append([missile_x, 4.0, missile_z, missile_angle])
+            boss_missile_timer = now
+
+        new_boss_missiles = []
+        for m in boss_missiles:
+            mx, my, mz, mdir = m
+            mx += math.sin(math.radians(mdir)) * 0.7
+            mz += math.cos(math.radians(mdir)) * 0.7
+            if check_collision(mx, mz, player_x, player_z, 1.2):
+                if not cheat_mode and not shield_on:
+                    player_health -= 20
+                    if player_health <= 0:
+                        game_over = True
+                explosions.append((mx, my, mz, 0.7))
+            elif not check_boundary_collision(mx, mz):
+                new_boss_missiles.append([mx, my, mz, mdir])
+        boss_missiles = new_boss_missiles
+        for bullet in bullets[:]:
+            if check_collision(bullet[0], bullet[2], boss_x, boss_z, 4.0):
+                boss_health -= 10
+                if boss_health < 0:
+                    boss_health = 0
+                explosions.append((bullet[0], bullet[1], bullet[2], 0.7))
+                bullets.remove(bullet)
+                if boss_health <= 0:
+                    boss_active = False
+                    winner = True
+        return 
+
+    for bullet in bullets[:]:
+        for enemy in enemies[:]:
+            if check_collision(bullet[0], bullet[2], enemy[0], enemy[2], 1.0):
+                player_score += 1
+                enemies.remove(enemy)
+                bullets.remove(bullet)
+                explosions.append((enemy[0], enemy[1], enemy[2], 1.0))
+                break
+
+    for bullet in enemy_bullets[:]:
+        if check_collision(bullet[0], bullet[2], player_x, player_z, 1.0):
+            enemy_bullets.remove(bullet)
+            if not cheat_mode and not shield_on:
+                player_health -= 10
+                if player_health <= 0:
+                    game_over = True
+            explosions.append((bullet[0], bullet[1], bullet[2], 0.5))
+
+    new_explosions = []
+    for explosion in explosions:
+        x, y, z, size = explosion
+        if size < 2.0:
+            new_explosions.append((x, y, z, size + 0.1))
+    explosions = new_explosions
+
+    if len(enemies) < 20 and not boss_active:
+        spawn_enemies(1)
+
+    if not boss_active:
+        update_enemy_positions()
+
+    glutPostRedisplay()
 
 def setup_camera():
-    cam_x = player_x - math.sin(math.radians(camera_angle)) * camera_distance
-    cam_y = camera_height
-    cam_z = player_z - math.cos(math.radians(camera_angle)) * camera_distance
-    gluLookAt(cam_x, cam_y, cam_z, player_x, 0, player_z, 0, 1, 0)
+    global camera_angle, camera_height, camera_distance
+    global target_camera_angle, target_camera_height, target_camera_distance, player_angle, player_x, player_y, player_z, first_person
 
-def mouse(button, state, x, y):
-    global bullets
-    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
-        bullet_x = player_x + math.sin(math.radians(player_angle)) * 1.5
-        bullet_y = 1.0  
-        bullet_z = player_z + math.cos(math.radians(player_angle)) * 1.5
-        bullets.append((bullet_x, bullet_y, bullet_z, player_angle))
+    # Make camera angle match player angle
+    camera_angle = player_angle
+    target_camera_angle = player_angle
+    
+    camera_height += (target_camera_height - camera_height) * camera_smoothness
+    camera_distance += (target_camera_distance - camera_distance) * camera_smoothness
 
-def update(value):
-    update_bullets()
-    glutPostRedisplay()
-    glutTimerFunc(16, update, 0)
+    if first_person:
+        cam_x = player_x + math.sin(math.radians(player_angle)) * 0.5 
+        cam_y = player_y + 1.0
+        cam_z = player_z + math.cos(math.radians(player_angle)) * 0.5
+        look_x = player_x + math.sin(math.radians(player_angle)) * 2.0
+        look_y = player_y + 1.0
+        look_z = player_z + math.cos(math.radians(player_angle)) * 2.0
+        gluLookAt(cam_x, cam_y, cam_z, look_x, look_y, look_z, 0, 1, 0)
+    else:
+        cam_x = player_x - math.sin(math.radians(camera_angle)) * camera_distance
+        cam_y = player_y + camera_height 
+        cam_z = player_z - math.cos(math.radians(camera_angle)) * camera_distance
+        gluLookAt(cam_x, cam_y, cam_z, player_x, player_y + 0.5, player_z, 0, 1, 0)
 
 def display():
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glLoadIdentity()
     setup_camera()
-    
     draw_ground()
     
     for tree in trees:
-        x, z, scale = tree
+        x, z, scale, color_var = tree
         draw_tree(x, z, scale)
-    
-    for enemy in enemies:
-        draw_enemy(enemy)
-    
-    for bullet in bullets:
-        x, y, z, _ = bullet
-        draw_bullet(x, y, z)
-    
     draw_player()
-    
-    glutSwapBuffers()
+    if shield_on:
+        draw_shield(player_x, player_y, player_z)
+    if boss_active:
+        draw_boss_alien(boss_x, boss_y, boss_z)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        bar_width = 400
+        bar_height = 20
+        x0 = WINDOW_WIDTH/2 - bar_width/2
+        y0 = 40
+        health_ratio = boss_health / boss_max_health
+        glColor3f(0.2, 0.2, 0.2)
+        glBegin(GL_QUADS)
+        glVertex2f(x0, y0)
+        glVertex2f(x0+bar_width, y0)
+        glVertex2f(x0+bar_width, y0+bar_height)
+        glVertex2f(x0, y0+bar_height)
+        glEnd()
+        glColor3f(0.1, 0.8, 0.1)
+        glBegin(GL_QUADS)
+        glVertex2f(x0, y0)
+        glVertex2f(x0+bar_width*health_ratio, y0)
+        glVertex2f(x0+bar_width*health_ratio, y0+bar_height)
+        glVertex2f(x0, y0+bar_height)
+        glEnd()
+        glColor3f(1.0, 1.0, 1.0)
+        glRasterPos2f(x0+bar_width/2-40, y0+bar_height-5)
+        for char in "ALIEN BOSS":
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+        glPopMatrix()
+        for m in boss_missiles:
+            glPushMatrix()
+            glTranslatef(m[0], m[1], m[2])
+            glColor3f(1.0, 0.2, 0.2)
+            glutSolidSphere(0.7, 12, 12)
+            glColor3f(1.0, 0.7, 0.0)
+            glutSolidSphere(0.4, 8, 8)
+            glPopMatrix()
+    else:
+        for enemy in enemies:
+            draw_enemy(enemy[0], enemy[1], enemy[2], enemy[3])
+        for bullet in enemy_bullets:
+            draw_enemy_bullet(bullet[0], bullet[1], bullet[2], bullet[3])
+    for bullet in bullets:
+        draw_bullet(bullet[0], bullet[1], bullet[2], bullet[3])
+    for explosion in explosions:
+        draw_explosion(explosion[0], explosion[1], explosion[2], explosion[3])
+    draw_hud()
+    draw_minimap()
+    draw_play_pause_button(is_paused)
+    draw_quit_button()
+    if is_paused:
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glColor4f(0.0, 0.0, 0.0, 0.5)
+        glBegin(GL_QUADS)
+        glVertex2f(0, 0)
+        glVertex2f(WINDOW_WIDTH, 0)
+        glVertex2f(WINDOW_WIDTH, WINDOW_HEIGHT)
+        glVertex2f(0, WINDOW_HEIGHT)
+        glEnd()
+        glDisable(GL_BLEND)
+        glColor3f(1.0, 1.0, 1.0)
+        glRasterPos2f(WINDOW_WIDTH/2 - 40, WINDOW_HEIGHT/2)
+        for char in "PAUSED":
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+        
+        glRasterPos2f(WINDOW_WIDTH/2 - 100, WINDOW_HEIGHT/2 + 30)
+        continue_text = "Press SPACE to continue"
+        for char in continue_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(char))
+        
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+        glPopMatrix()
 
-def keyboard(key, x, y):
-    global player_x, player_z, player_angle, camera_angle
-    
-    if key == b'w':
-        player_x += math.sin(math.radians(player_angle)) * 0.5
-        player_z += math.cos(math.radians(player_angle)) * 0.5
-    elif key == b's':
-        player_x -= math.sin(math.radians(player_angle)) * 0.5
-        player_z -= math.cos(math.radians(player_angle)) * 0.5
-    elif key == b'a':
-        player_angle = (player_angle + 5) % 360
-        camera_angle = player_angle
-    elif key == b'd':
-        player_angle = (player_angle - 5) % 360
-        camera_angle = player_angle
-    elif key == b'q':
-        glutLeaveMainLoop()
-    
-    glutPostRedisplay()
+    glutSwapBuffers()
 
 def reshape(w, h):
     global WINDOW_WIDTH, WINDOW_HEIGHT
@@ -585,15 +947,87 @@ def reshape(w, h):
     gluPerspective(60, float(w)/float(h), 0.1, 1000.0)
     glMatrixMode(GL_MODELVIEW)
 
-def main():
-    glutInit(sys.argv)
-    init()
-    glutDisplayFunc(display)
-    glutReshapeFunc(reshape)
-    glutKeyboardFunc(keyboard)
-    glutMouseFunc(mouse)
-    glutTimerFunc(16, update, 0)
-    glutMainLoop()
+def keyboard(key, x, y):
+    global move_forward, move_backward, move_left, move_right
+    global player_x, player_z, player_angle, player_health, player_score
+    global enemies, bullets, enemy_bullets, explosions, missed_shots, game_over
+    global cheat_mode, speed_boost, scan_angle, shield_on, is_paused
+
+    if key == b' ':
+        is_paused = not is_paused
+        if is_paused:
+            glutSetCursor(GLUT_CURSOR_INHERIT)  # Show cursor when paused
+            print("Game Paused")
+        else:
+            glutSetCursor(GLUT_CURSOR_NONE)  # Hide cursor when resuming
+            print("Game Resumed")
+        return
+    elif key == b'\x1b':  # ESC key
+        is_paused = True
+        glutSetCursor(GLUT_CURSOR_INHERIT)  # Show cursor when paused
+        print("Game Paused")
+        return
+    elif key == b'c' or key == b'C':
+        cheat_mode = not cheat_mode
+        if cheat_mode:
+            player_health = 100
+            enemy_bullets = []
+            nearest_enemy = None
+            min_distance = float('inf')
+            for enemy in enemies:
+                dx = enemy[0] - player_x
+                dz = enemy[2] - player_z
+                distance = math.sqrt(dx*dx + dz*dz)
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_enemy = enemy
+            if nearest_enemy:
+                dx = nearest_enemy[0] - player_x
+                dz = nearest_enemy[2] - player_z
+                player_angle = math.degrees(math.atan2(dx, dz))
+    elif not is_paused:
+        if key == b'w':
+            move_forward = True
+        elif key == b's':
+            move_backward = True
+        elif key == b'a':
+            move_left = True
+        elif key == b'd':
+            move_right = True
+        elif key == b'b':
+            speed_boost = True
+        elif key == b'r':
+            player_x = 0
+            player_z = 0
+            player_angle = 0
+            scan_angle = 0
+            player_health = 100
+            player_score = 0
+            missed_shots = 0
+            game_over = False
+            enemies = []
+            bullets = []
+            enemy_bullets = []
+            explosions = []
+            spawn_enemies(15)
+        elif key == b'q':
+            glutLeaveMainLoop()
+        elif key == b'i' or key == b'I':
+            if not is_paused:
+                shield_on = not shield_on
+
+def keyboard_up(key, x, y):
+    global move_forward, move_backward, move_left, move_right, speed_boost
+    if key == b'w':
+        move_forward = False
+    elif key == b's':
+        move_backward = False
+    elif key == b'a':
+        move_left = False
+    elif key == b'd':
+        move_right = False
+    elif key == b'b': 
+        speed_boost = False
 
 if __name__ == "__main__":
     main() 
