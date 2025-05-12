@@ -1029,5 +1029,467 @@ def keyboard_up(key, x, y):
     elif key == b'b': 
         speed_boost = False
 
+def mouse(button, state, x, y):
+    global bullets, first_person, is_paused, WINDOW_WIDTH, WINDOW_HEIGHT
+    global player_x, player_z, player_angle, scan_angle, player_health, player_score, missed_shots, game_over, enemies, bullets, enemy_bullets, explosions
+    ogl_x = x
+    ogl_y = y
+    btn_x = WINDOW_WIDTH - 60
+    btn_y = 40
+    btn_size = 30
+    quit_x = WINDOW_WIDTH - 60 - 40
+    quit_y = 40
+    quit_size = 30
+
+    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
+        dist = math.sqrt((ogl_x - btn_x)**2 + (ogl_y - btn_y)**2)
+        if dist <= btn_size/2:
+            is_paused = not is_paused
+            if is_paused:
+                print("Game Paused")
+            else:
+                print("Game Resumed")
+            return
+        dist_quit = math.sqrt((ogl_x - quit_x)**2 + (ogl_y - quit_y)**2)
+        if dist_quit <= quit_size/2:
+            glutLeaveMainLoop()
+            return
+
+    if button == GLUT_RIGHT_BUTTON and state == GLUT_DOWN:
+        first_person = not first_person
+    elif button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
+        bullet_x = player_x + math.sin(math.radians(player_angle)) * 1.5
+        bullet_y = player_y + 0.5
+        bullet_z = player_z + math.cos(math.radians(player_angle)) * 1.5
+        bullets.append([bullet_x, bullet_y, bullet_z, player_angle])
+
+def special_input(key, x, y):
+    global target_camera_distance, target_camera_height, target_camera_angle
+    if key == GLUT_KEY_LEFT:
+        target_camera_angle -= 10
+    elif key == GLUT_KEY_RIGHT:
+        target_camera_angle += 10 
+    elif key == GLUT_KEY_UP:
+        target_camera_distance = max(5.0, target_camera_distance - 1.0) 
+    elif key == GLUT_KEY_DOWN:
+        target_camera_distance = min(40.0, target_camera_distance + 1.0) 
+    elif key == GLUT_KEY_PAGE_UP:
+        target_camera_height = min(20.0, target_camera_height + 0.5)
+    elif key == GLUT_KEY_PAGE_DOWN:
+        target_camera_height = max(2.0, target_camera_height - 0.5)
+
+def update(value):
+    update_game()
+    glutPostRedisplay()
+    glutTimerFunc(16, update, 0)
+
+def check_boundary_collision(x, z):
+    buffer = 30.0  # Buffer zone
+    return (abs(x) > world_size - buffer or abs(z) > world_size - buffer)
+
+def check_collision(x1, z1, x2, z2, radius):
+    dx = x1 - x2
+    dz = z1 - z2
+    distance = math.sqrt(dx * dx + dz * dz)
+    return distance < radius
+
+def draw_shield(x, y, z, radius=1.2):
+    glPushMatrix()
+    glTranslatef(x, y+1.0, z)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glColor4f(0.4, 0.7, 1.0, 0.25)
+    glutSolidSphere(radius, 32, 32)
+    glDisable(GL_BLEND)
+    glPopMatrix()
+
+def draw_boss_alien(x, y, z):
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    glScalef(4.0, 4.0, 4.0) 
+    # body (green)
+    glColor3f(0.1, 0.7, 0.1)
+    glPushMatrix()
+    glTranslatef(0, 2.5, 0)
+    glScalef(2.0, 3.0, 1.0)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # belly (yellow)
+    glColor3f(0.8, 0.9, 0.2)
+    glPushMatrix()
+    glTranslatef(0, 2.5, 0.51)
+    glScalef(1.0, 2.0, 0.1)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # head (green)
+    glColor3f(0.1, 0.7, 0.1)
+    glPushMatrix()
+    glTranslatef(0.7, 4.2, 0)
+    glScalef(1.5, 1.2, 1.0)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # eye (white)
+    glColor3f(1.0, 1.0, 1.0)
+    glPushMatrix()
+    glTranslatef(1.2, 4.5, 0.4)
+    glScalef(0.2, 0.2, 0.2)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # pupil (black)
+    glColor3f(0.0, 0.0, 0.0)
+    glPushMatrix()
+    glTranslatef(1.22, 4.5, 0.45)
+    glScalef(0.08, 0.08, 0.08)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # mouth (black)
+    glColor3f(0.0, 0.0, 0.0)
+    glPushMatrix()
+    glTranslatef(1.1, 4.0, 0.5)
+    glScalef(0.5, 0.1, 0.1)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # Boss description
+    # teeth (white)
+    glColor3f(1.0, 1.0, 1.0)
+    for i in range(3):
+        glPushMatrix()
+        glTranslatef(1.0 + 0.1*i, 3.95, 0.55)
+        glScalef(0.05, 0.05, 0.05)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    # arms (green)
+    glColor3f(0.1, 0.7, 0.1)
+    for sign in [-1, 1]:
+        glPushMatrix()
+        glTranslatef(sign*1.2, 3.2, 0)
+        glRotatef(sign*30, 0, 0, 1)
+        glScalef(0.3, 1.2, 0.3)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    # Claws (gray)
+    glColor3f(0.7, 0.7, 0.7)
+    for sign in [-1, 1]:
+        for i in range(3):
+            glPushMatrix()
+            glTranslatef(sign*1.2 + sign*0.1*i, 2.5 - 0.1*i, 0.2)
+            glScalef(0.08, 0.18, 0.08)
+            glutSolidCube(1.0)
+            glPopMatrix()
+    # Legs (green)
+    for sign in [-1, 1]:
+        glPushMatrix()
+        glTranslatef(sign*0.5, 0.7, 0)
+        glScalef(0.4, 1.2, 0.4)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    # Feet (gray)
+    glColor3f(0.7, 0.7, 0.7)
+    for sign in [-1, 1]:
+        glPushMatrix()
+        glTranslatef(sign*0.5, 0.1, 0.2)
+        glScalef(0.18, 0.08, 0.18)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    # Tail (green)
+    glColor3f(0.1, 0.7, 0.1)
+    glPushMatrix()
+    glTranslatef(-1.2, 1.2, 0)
+    glRotatef(-30, 0, 0, 1)
+    glScalef(1.2, 0.3, 0.3)
+    glutSolidCube(1.0)
+    glPopMatrix()
+    # Spikes (purple)
+    glColor3f(0.5, 0.2, 0.7)
+    for i in range(5):
+        glPushMatrix()
+        glTranslatef(-0.5 + 0.25*i, 3.5 + 0.2*i, 0.5)
+        glScalef(0.08, 0.18, 0.08)
+        glutSolidCube(1.0)
+        glPopMatrix()
+    glPopMatrix()
+
+def draw_play_pause_button(is_paused):
+    global WINDOW_WIDTH, WINDOW_HEIGHT
+    x = WINDOW_WIDTH - 60
+    y = 40
+    size = 30
+
+    glPushMatrix()
+    glLoadIdentity()
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    glOrtho(0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, -1, 1)
+    glMatrixMode(GL_MODELVIEW)
+    glLoadIdentity()
+    glColor3f(1.0, 0.8, 0.0) 
+    glBegin(GL_TRIANGLE_FAN)
+    glVertex2f(x, y)
+    for angle in range(0, 361, 10):
+        glVertex2f(x + size/2 * math.cos(math.radians(angle)), y + size/2 * math.sin(math.radians(angle)))
+    glEnd()
+
+    glColor3f(1.0, 1.0, 1.0)
+    if is_paused:
+        glBegin(GL_TRIANGLES)
+        glVertex2f(x - size/6, y - size/4)
+        glVertex2f(x - size/6, y + size/4)
+        glVertex2f(x + size/4, y)
+        glEnd()
+    else:        
+        bar_width = size/8
+        bar_height = size/3
+        glBegin(GL_QUADS)
+        glVertex2f(x - bar_width*2, y - bar_height/2)
+        glVertex2f(x - bar_width, y - bar_height/2)
+        glVertex2f(x - bar_width, y + bar_height/2)
+        glVertex2f(x - bar_width*2, y + bar_height/2)
+        glEnd()
+        glBegin(GL_QUADS)
+        glVertex2f(x + bar_width, y - bar_height/2)
+        glVertex2f(x + bar_width*2, y - bar_height/2)
+        glVertex2f(x + bar_width*2, y + bar_height/2)
+        glVertex2f(x + bar_width, y + bar_height/2)
+        glEnd()
+    
+    glColor3f(1.0, 1.0, 1.0)
+    glRasterPos2f(x - 35, y + 25)
+    label = "Play/Pause"
+    for char in label:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
+    glPopMatrix()
+
+def draw_quit_button():
+    global WINDOW_WIDTH, WINDOW_HEIGHT
+    x = WINDOW_WIDTH - 60 - 40  
+    y = 40
+    size = 30
+
+    glPushMatrix()
+    glLoadIdentity()
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    glOrtho(0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, -1, 1)
+    glMatrixMode(GL_MODELVIEW)
+    glLoadIdentity()
+    glColor3f(1.0, 0.0, 0.0)
+    glBegin(GL_TRIANGLE_FAN)
+    glVertex2f(x, y)
+    for angle in range(0, 361, 10):
+        glVertex2f(x + size/2 * math.cos(math.radians(angle)), y + size/2 * math.sin(math.radians(angle)))
+    glEnd()
+
+    glColor3f(1.0, 1.0, 1.0)
+    line_width = size/6
+    glBegin(GL_QUADS)
+    glVertex2f(x - line_width, y - line_width)
+    glVertex2f(x + line_width, y + line_width)
+    glVertex2f(x + line_width, y + line_width*2)
+    glVertex2f(x - line_width, y - line_width*2)
+    glEnd()
+    
+    glBegin(GL_QUADS)
+    glVertex2f(x - line_width, y + line_width)
+    glVertex2f(x + line_width, y - line_width)
+    glVertex2f(x + line_width, y - line_width*2)
+    glVertex2f(x - line_width, y + line_width*2)
+    glEnd()
+
+
+    glColor3f(1.0, 1.0, 1.0)
+    glRasterPos2f(x - 15, y + 25)
+    label = "Quit"
+    for char in label:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
+    glPopMatrix()
+
+def draw_minimap():
+    global WINDOW_WIDTH, WINDOW_HEIGHT, player_x, player_z, player_angle, enemies, boss_active, boss_x, boss_z, power_ups, bullets, enemy_bullets
+    map_size = 150 
+    margin = 20     
+    x = margin
+    y = WINDOW_HEIGHT - map_size - margin
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    glOrtho(0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, -1, 1)
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glColor4f(0.0, 0.0, 0.0, 0.7)
+    glBegin(GL_QUADS)
+    glVertex2f(x, y)
+    glVertex2f(x + map_size, y)
+    glVertex2f(x + map_size, y + map_size)
+    glVertex2f(x, y + map_size)
+    glEnd()
+    glColor3f(1.0, 1.0, 1.0)
+    glBegin(GL_LINE_LOOP)
+    glVertex2f(x, y)
+    glVertex2f(x + map_size, y)
+    glVertex2f(x + map_size, y + map_size)
+    glVertex2f(x, y + map_size)
+    glEnd()
+    scale = map_size / (world_size * 2)
+    center_x = x + map_size / 2
+    center_y = y + map_size / 2
+    glColor3f(0.0, 1.0, 0.0)
+    for pu in power_ups:
+        pu_x, pu_z = pu[0], pu[2]
+        dx = pu_x - player_x
+        dz = pu_z - player_z
+        map_x = center_x + dx * scale
+        map_y = center_y + dz * scale
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(map_x, map_y)
+        for angle in range(0, 361, 10):
+            glVertex2f(map_x + 2 * math.cos(math.radians(angle)),
+                      map_y + 2 * math.sin(math.radians(angle)))
+        glEnd()
+    glColor3f(1.0, 1.0, 1.0)
+    for b in bullets:
+        b_x, b_z = b[0], b[2]
+        dx = b_x - player_x
+        dz = b_z - player_z
+        map_x = center_x + dx * scale
+        map_y = center_y + dz * scale
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(map_x, map_y)
+        for angle in range(0, 361, 30):
+            glVertex2f(map_x + 1.5 * math.cos(math.radians(angle)),
+                      map_y + 1.5 * math.sin(math.radians(angle)))
+        glEnd()
+
+    glColor3f(1.0, 0.5, 0.0)
+    for b in enemy_bullets:
+        b_x, b_z = b[0], b[2]
+        dx = b_x - player_x
+        dz = b_z - player_z
+        map_x = center_x + dx * scale
+        map_y = center_y + dz * scale
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(map_x, map_y)
+        for angle in range(0, 361, 30):
+            glVertex2f(map_x + 1.5 * math.cos(math.radians(angle)),
+                      map_y + 1.5 * math.sin(math.radians(angle)))
+        glEnd()
+    glColor3f(1.0, 0.0, 0.0)
+    for enemy in enemies:
+        enemy_x = enemy[0]
+        enemy_z = enemy[2]
+        dx = enemy_x - player_x
+        dz = enemy_z - player_z
+        map_x = center_x + dx * scale
+        map_y = center_y + dz * scale
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(map_x, map_y)
+        for angle in range(0, 361, 10):
+            glVertex2f(map_x + 2 * math.cos(math.radians(angle)),
+                      map_y + 2 * math.sin(math.radians(angle)))
+        glEnd()
+
+    if boss_active:
+        glColor3f(1.0, 1.0, 0.0)
+        dx = boss_x - player_x
+        dz = boss_z - player_z
+        map_x = center_x + dx * scale
+        map_y = center_y + dz * scale
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(map_x, map_y)
+        for angle in range(0, 361, 10):
+            glVertex2f(map_x + 4 * math.cos(math.radians(angle)),
+                      map_y + 4 * math.sin(math.radians(angle)))
+        glEnd()
+    
+    glColor3f(0.0, 0.0, 1.0)
+    glBegin(GL_TRIANGLE_FAN)
+    glVertex2f(center_x, center_y)
+    for angle in range(0, 361, 10):
+        glVertex2f(center_x + 3 * math.cos(math.radians(angle)),
+                  center_y + 3 * math.sin(math.radians(angle)))
+    glEnd()
+
+    glColor3f(0.0, 0.7, 1.0)
+    arrow_length = 12
+    angle_rad = math.radians(player_angle)
+    arrow_x = center_x + arrow_length * math.sin(angle_rad)
+    arrow_y = center_y + arrow_length * math.cos(angle_rad)
+    glLineWidth(2)
+    glBegin(GL_LINES)
+    glVertex2f(center_x, center_y)
+    glVertex2f(arrow_x, arrow_y)
+    glEnd()
+    glLineWidth(1)
+    glColor3f(0.0, 0.7, 0.7)
+
+    font = GLUT_BITMAP_HELVETICA_12
+    compass = [('N', 0, -map_size/2 + 10), ('S', 0, map_size/2 - 15), ('E', map_size/2 - 15, 0), ('W', -map_size/2 + 5, 0)]
+    for label, dx, dy in compass:
+        glRasterPos2f(center_x + dx - 5, center_y + dy + 5)
+        for ch in label:
+            glutBitmapCharacter(font, ord(ch))
+
+    glBegin(GL_LINES)
+    glVertex2f(center_x - map_size/2, center_y)
+    glVertex2f(center_x + map_size/2, center_y)
+    glVertex2f(center_x, center_y - map_size/2)
+    glVertex2f(center_x, center_y + map_size/2)
+    glEnd()
+    glColor3f(1.0, 1.0, 1.0)
+    glRasterPos2f(x + map_size/2 - 30, y - 5)
+    label = "MINIMAP"
+    for char in "MINIMAP":
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+
+    glDisable(GL_BLEND)
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
+    glPopMatrix()
+
+def mouse_motion(x, y):
+    global player_angle, is_paused
+    
+    if glutGetModifiers() & GLUT_ACTIVE_SHIFT:
+        glutSetCursor(GLUT_CURSOR_INHERIT)
+        return
+    glutSetCursor(GLUT_CURSOR_NONE)
+
+    center_x = WINDOW_WIDTH // 2
+    
+    rotation_speed = 0.5
+    dx = x - center_x
+    player_angle -= dx * rotation_speed
+
+    player_angle %= 360
+
+    glutWarpPointer(center_x, WINDOW_HEIGHT // 2)
+
+def main():
+    glutInit(sys.argv)
+    init()
+    glutDisplayFunc(display)
+    glutReshapeFunc(reshape)
+    glutKeyboardFunc(keyboard)
+    glutKeyboardUpFunc(keyboard_up)
+    glutSpecialFunc(special_input)
+    glutMouseFunc(mouse)
+    glutMotionFunc(mouse_motion)
+    glutPassiveMotionFunc(mouse_motion) 
+    glutTimerFunc(16, update, 0)
+    glutMainLoop()
+
 if __name__ == "__main__":
     main() 
