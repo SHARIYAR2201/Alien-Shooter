@@ -253,7 +253,7 @@ def draw_explosion(x, y, z, size):
     
     glPopMatrix()
     
-    def draw_ground():
+def draw_ground():
     glColor3f(0.4, 0.25, 0.1)
     glPushMatrix()
     glTranslatef(0, -0.5, 0)
